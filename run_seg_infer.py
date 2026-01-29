@@ -11,6 +11,10 @@ from skimage import io
 import torch
 from torch.amp.autocast_mode import autocast
 import yaml
+import os
+import tempfile
+import io
+from mutils.gcs_utils import download_file_from_gcs, upload_file_to_gcs, list_gcs_files, download_bytes_from_gcs
 
 from mirage.model import model_factory
 from mirage.output_adapters import (
@@ -19,7 +23,8 @@ from mirage.output_adapters import (
     LinearSegAdapter,
     SegmenterMaskTransformerAdapter
 )
-import mutils.checkpoint
+# import mutils.checkpoint
+from mutils import misc
 from mutils.native_scaler import NativeScalerWithGradNormCount as NativeScaler
 from mutils.seg_one_data import simple_transform
 from mutils.optim_factory import LayerDecayValueAssigner, create_optimizer
@@ -28,6 +33,7 @@ from mutils.misc import fix_seeds, SortingHelpFormatter
 from fm_seg_config import fm_factory
 from downloadimage import download
 from argparse import Namespace
+import sys
 
 def get_args():
     args = Namespace(
@@ -77,7 +83,7 @@ def get_args():
         eval_freq=1,
 
         # ===== Runtime =====
-        base_output_dir='./__output/seg',
+        base_output_dir='gs://test-oct-image-output',
         device='cuda',
         seed=42,
         resume='',
@@ -97,8 +103,8 @@ def get_args():
         version='v1',
 
         # ===== Required =====
-        weights="__weights/MIRAGE-Base.pth",
-        data_path="__datasets/Segmentation/AROI",
+        weights="gs://test-oct-mirage-model/MIRAGE-Base.pth",
+        data_path="gs://test-oct-image",
     )
 
     return process_args(args)
@@ -263,6 +269,16 @@ def main(args, img_path):
         if args.weights.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.weights, map_location='cpu')
+        elif args.weights.startswith('gs://'):
+            with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                print(f'Downloading weights from GCS: {args.weights}')
+                download_file_from_gcs(args.weights, tmp_path)
+                checkpoint = torch.load(tmp_path, map_location='cpu', weights_only=False)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
         else:
             checkpoint = torch.load(args.weights, map_location='cpu', weights_only=False)
 
@@ -312,13 +328,17 @@ def main(args, img_path):
 
     lookup_table = get_lookup_table(args.inverse_mapping, device=device)
 
-    mutils.checkpoint.auto_load_model(
-        args=args,
-        model=model,
-        optimizer=optimizer,
-        loss_scaler=loss_scaler,
-        best=args.test,
-    )
+    # mutils.checkpoint.auto_load_model(
+    #     args=args,
+    #     model=model,
+    #     optimizer=optimizer,
+    #     loss_scaler=loss_scaler,
+    #     best=args.test,
+    # )
+    # Load the best checkpoint
+    args.resume = 'gs://test-oct-mirage-model/seg/checkpoint-best.pth'
+    misc.load_model(args=args, model=model, optimizer=optimizer)
+
 
     if args.test:
         assert img_path is not None
@@ -363,9 +383,13 @@ def evaluate(
     # Switch to evaluation mode
     model.eval()
 
-    save_dir = Path("__image_seg")
+    save_dir = Path("gs://test-oct-image-output")
 
-    img_pil = Image.open(img_path).convert("L")
+    if str(img_path).startswith("gs://"):
+        img_bytes = download_bytes_from_gcs(str(img_path))
+        img_pil = Image.open(io.BytesIO(img_bytes)).convert("L")
+    else:
+        img_pil = Image.open(img_path).convert("L")
     img_np = np.array(img_pil)
     out = val_transform(image=img_np)
     img_tensor = out["image"]          # (C, H, W)
@@ -384,10 +408,33 @@ def evaluate(
         assert save_dir is not None
         assert lookup_table is not None
         pred_i = lookup_table[seg_pred_argmax.long()].cpu().numpy().astype(np.uint8)
-        path = Path(img_path)
-        filename = f'{path.stem}_pred.png'
-        io.imsave(save_dir / filename, pred_i)
-        save_path = save_dir / filename
+        
+        # Determine filename from img_path (could be GCS URI or local path)
+        if str(img_path).startswith("gs://"):
+            img_name = str(img_path).split("/")[-1]
+            path_stem = os.path.splitext(img_name)[0]
+        else:
+            path_stem = Path(img_path).stem
+            
+        filename = f'{path_stem}_pred.png'
+        
+        if str(save_dir).startswith("gs://"):
+            # Use temporary file to upload via SDK
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                pil_img = Image.fromarray(pred_i)
+                pil_img.save(tmp_path)
+                output_uri = f"{str(save_dir).rstrip('/')}/{filename}"
+                upload_file_to_gcs(tmp_path, output_uri)
+                save_path = output_uri
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            save_dir.mkdir(parents=True, exist_ok=True)
+            io.imsave(save_dir / filename, pred_i)
+            save_path = save_dir / filename
 
     if infer_only:
         print('Inference done. Exiting...')
@@ -406,11 +453,44 @@ def seg_oct(image_url):
     return save_path
 
 if __name__ == '__main__':
-    img_path = "__image/NORMAL_7_9.png"
     opts = get_args()
-    if opts.output_dir:
+    
+    # 1. 決定輸入圖片列表 (自動抓取或單一指定)
+    img_list = []
+    
+    if len(sys.argv) > 1:
+        # 如果有傳入參數，視為單一檔案處理
+        img_list = [sys.argv[1]]
+    else:
+        # 如果沒傳入參數，根據 data_path 自動抓取
+        input_path = str(opts.data_path)
+        print(f"🔍 自動抓取圖片路徑: {input_path}")
+        
+        if input_path.startswith("gs://"):
+            img_list = list_gcs_files(input_path)
+        else:
+            if os.path.exists(input_path):
+                img_list = sorted([str(Path(input_path) / f) for f in os.listdir(input_path) 
+                                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
+    
+    if not img_list:
+        print(f"❌ 找不到可處理的圖片。請確認路徑: {opts.data_path}")
+        sys.exit(0)
+
+    # 2. 本地輸出目錄準備 (GCS 則跳過)
+    if opts.output_dir and not str(opts.output_dir).startswith("gs://"):
+        out_dir = Path(opts.output_dir)
         if opts.minmax:
-            opts.output_dir += '_minmax'
-        Path(opts.output_dir).mkdir(parents=True, exist_ok=True)
-    save_path = main(opts, img_path)
-    print(save_path)
+            out_dir = Path(str(out_dir) + '_minmax')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+    # 3. 批次執行 Inference
+    print(f"🚀 發現 {len(img_list)} 張圖片，開始進行推論...")
+    for img_path in img_list:
+        try:
+            save_path = main(opts, img_path)
+            print(f"✅ 完成: {os.path.basename(img_path)} -> {save_path}")
+        except Exception as e:
+            print(f" error 發生於 {img_path}: {e}")
+            import traceback
+            traceback.print_exc()

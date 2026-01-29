@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCT AI 智慧診斷系統</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --accent: #f093fb;
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text: #f8fafc;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at top right, #1e293b, #0f172a);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .glass-panel {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 32px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-weight: 600;
+            font-size: 2.8rem;
+            margin: 0;
+            background: linear-gradient(to right, var(--primary), var(--secondary), var(--accent));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1rem;
+            margin-top: 8px;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 30px;
+        }
+
+        .upload-zone {
+            position: relative;
+            border: 2px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            padding: 40px 20px;
+            text-align: center;
+            transition: all 0.4s ease;
+            background: rgba(255, 255, 255, 0.02);
+            cursor: pointer;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: #0f172a;
+            font-weight: 600;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 1rem;
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 242, 254, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+        }
+
+        .result-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        pre {
+            background: #000;
+            padding: 15px;
+            border-radius: 12px;
+            overflow-x: auto;
+            color: #10b981;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            border: 1px solid #1e293b;
+            margin: 0;
+        }
+
+        #imagePreview {
+            width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            border-radius: 12px;
+            display: none;
+            margin-bottom: 15px;
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #FFF;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: none;
+            animation: rotation 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="glass-panel">
+        <header>
+            <h1>OCT AI System</h1>
+            <p class="subtitle">整合 GCS 雲端推論與量化分析</p>
+        </header>
+
+        <div class="main-grid">
+            <div>
+                <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                    <img id="imagePreview">
+                    <div id="uploadPrompt">
+                        <span style="font-size: 2.5rem; display: block; margin-bottom: 10px;">📤</span>
+                        <span>點擊上傳圖片至 GCS</span>
+                    </div>
+                    <input type="file" id="fileInput" style="display:none" accept="image/*">
+                </div>
+
+                <input type="text" id="gcsUriInput" placeholder="gs://路徑..."
+                    style="width:100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; color: white; margin-top: 15px;">
+
+                <button class="btn" id="analyzeBtn" onclick="runInference()" disabled>
+                    <span id="btnText">啟動 AI 分析流程</span>
+                    <div class="loader" id="btnLoader"></div>
+                </button>
+                <div id="statusMsg"
+                    style="text-align:center; font-size:0.8rem; margin-top:10px; color: var(--secondary);"></div>
+            </div>
+
+            <div class="result-panel">
+                <h4 style="margin-top:0; color: var(--primary);">分析結果報告</h4>
+                <pre id="jsonOutput">等待任務...</pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPath = "";
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('imagePreview');
+        const prompt = document.getElementById('uploadPrompt');
+        const statusMsg = document.getElementById('statusMsg');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const gcsInput = document.getElementById('gcsUriInput');
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                prompt.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+
+            statusMsg.innerText = "正在上傳至 GCS...";
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const resp = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.gcs_uri) {
+                    currentPath = data.gcs_uri;
+                    gcsInput.value = currentPath;
+                    statusMsg.innerText = "已上傳成功";
+                    analyzeBtn.disabled = false;
+                }
+            } catch (err) {
+                statusMsg.innerText = "上傳失敗";
+            }
+        });
+
+        async function runInference() {
+            const path = gcsInput.value || currentPath;
+            if (!path) return;
+
+            const btnText = document.getElementById('btnText');
+            const btnLoader = document.getElementById('btnLoader');
+            const output = document.getElementById('jsonOutput');
+
+            analyzeBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'block';
+            output.innerText = "🏃 正在執行分類與分割任務...";
+
+            try {
+                const response = await fetch('/predict/oct', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_gcs_path: path })
+                });
+                const data = await response.json();
+                output.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                output.innerText = "分析發生錯誤";
+            } finally {
+                analyzeBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+
+</html>

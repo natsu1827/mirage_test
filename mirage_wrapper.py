@@ -10,6 +10,9 @@ from torch import nn
 from skimage import io
 from skimage.transform import resize
 from torchvision.utils import save_image
+import os
+import tempfile
+from mutils.gcs_utils import download_file_from_gcs
 
 from mirage.input_adapters import PatchedInputAdapter, SemSegInputAdapter
 from mirage.output_adapters import SpatialOutputAdapter
@@ -56,7 +59,18 @@ class MIRAGEWrapper(nn.Module):
         super().__init__()
 
         assert weights is not None
-        state_dict = torch.load(weights, map_location=device, weights_only=False)
+        if weights.startswith('gs://'):
+            with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                print(f'Downloading weights from GCS: {weights}')
+                download_file_from_gcs(weights, tmp_path)
+                state_dict = torch.load(tmp_path, map_location=device, weights_only=False)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            state_dict = torch.load(weights, map_location=device, weights_only=False)
         model_state_dict = state_dict["model"]
 
         args = state_dict["args"]

@@ -1,4 +1,9 @@
 import torch
+import sys
+import os
+import io
+import tempfile
+from mutils.gcs_utils import download_file_from_gcs, download_bytes_from_gcs, list_gcs_files
 from mutils import misc
 from mutils.classification_one import evaluate_one
 from mutils.misc import fix_seeds
@@ -25,7 +30,7 @@ def get_args():
         linear_probing=False,
         resume='',
         pool='global',
-        base_output_dir='./__output/cls',
+        base_output_dir='gs://test-oct-image-output',
 
         # Data parameters
         num_workers=8,
@@ -52,14 +57,29 @@ def get_args():
         affine=True,
 
         # Required arguments
-        weights='./__weights/MIRAGE-Base.pth',
+        weights='gs://test-oct-mirage-model/MIRAGE-Base.pth',
         data_root='/path/to/data',
         data_set='dataset_name',
     )
     return args
 
+def download_bytes_from_gcs(gcs_uri: str) -> bytes:
+    """解析 GCS URI 並下載為原始 Bytes"""
+    try:
+        storage_client = storage.Client()
+        clean_uri = gcs_uri.replace("gs://", "")
+        if "/" not in clean_uri:
+            raise ValueError(f"Invalid GCS URI format: {gcs_uri}")
+        bucket_name, blob_name = clean_uri.split("/", 1)
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        print(f"⬇️ Downloading from GCS: {gcs_uri}")
+        return blob.download_as_bytes()
+    except Exception as e:
+        raise RuntimeError(f"Failed to download {gcs_uri}: {e}")
+
 def process_args(args):
-    args.data_path = "./__image"
+    args.data_path = os.getenv("INPUT_BUCKET_URI", "gs://test-oct-image")
     num_classes = 3
     args.num_classes = num_classes
     args.batch_size = 1
@@ -89,9 +109,17 @@ def main(args, img_path):
     optimizer = model_config.get_optimizer(model)
 
     # Evaluate on the best checkpoint
-    args.resume = './__output/cls/v1/0/OCT_1_3class/mirage-base_finetune_w_7a2865b8/checkpoint-best-model.pth'
+    args.resume = 'gs://test-oct-mirage-model/cls/checkpoint-best-model.pth'
     misc.load_model(args=args, model=model, optimizer=optimizer)
-    test_stats = evaluate_one(model, img_path, device)
+
+    # 處理 GCS 圖片路徑
+    if str(img_path).startswith("gs://"):
+        img_bytes = download_bytes_from_gcs(str(img_path))
+        img_input = io.BytesIO(img_bytes)
+    else:
+        img_input = img_path
+
+    test_stats = evaluate_one(model, img_input, device)
     labels = ['AMD', 'DME', 'Normal']
     assert test_stats is not None
     pred_idx = test_stats['Prediction'].item()
@@ -106,8 +134,36 @@ def cls_oct(image_url):
     return pred, conf
 
 if __name__ == '__main__':
-    img_path = "/home/cji102_12/work/MIRAGE/__image/NORMAL_7_9.png"
     args = get_args()
-    pred, conf = main(args, img_path)
-    print("Prediction:", pred)
-    print("Confidence:", conf)
+    
+    # 1. 決定輸入圖片列表 (自動抓取或單一指定)
+    img_list = []
+    
+    if len(sys.argv) > 1:
+        img_list = [sys.argv[1]]
+    else:
+        input_path = str(args.data_path)
+        print(f"🔍 自動抓取圖片路徑: {input_path}")
+        
+        if input_path.startswith("gs://"):
+            img_list = list_gcs_files(input_path)
+        else:
+            if os.path.exists(input_path):
+                img_list = sorted([str(os.path.join(input_path, f)) for f in os.listdir(input_path) 
+                                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
+    
+    if not img_list:
+        print(f"❌ 找不到可處理的圖片。請確認路徑: {args.data_path}")
+        sys.exit(0)
+
+    # 2. 批次執行 Inference
+    print(f"🚀 發現 {len(img_list)} 張圖片，開始進行推論...")
+    for img_path in img_list:
+        try:
+            pred, conf = main(args, img_path)
+            print(f"✅ 完成: {os.path.basename(img_path)}")
+            print(f"   -> 預測結果: {pred} (信心度: {conf:.4f})")
+        except Exception as e:
+            print(f"❌ 發生錯誤於 {img_path}: {e}")
+            import traceback
+            traceback.print_exc()

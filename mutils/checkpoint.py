@@ -3,6 +3,9 @@ from pathlib import Path
 import glob
 
 import torch
+import os
+import tempfile
+from .gcs_utils import download_file_from_gcs
 
 
 
@@ -60,6 +63,16 @@ def auto_load_model(
             if args.resume.startswith('https'):
                 checkpoint = torch.hub.load_state_dict_from_url(
                     args.resume, map_location='cpu')
+            elif args.resume.startswith('gs://'):
+                with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp:
+                    tmp_path = tmp.name
+                try:
+                    print(f'Downloading checkpoint from GCS: {args.resume}')
+                    download_file_from_gcs(args.resume, tmp_path)
+                    checkpoint = torch.load(tmp_path, map_location='cpu', weights_only=False)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
             else:
                 checkpoint = torch.load(args.resume, map_location='cpu', weights_only=False)
             model.load_state_dict(checkpoint['model'])

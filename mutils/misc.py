@@ -5,6 +5,9 @@ import random
 import torch
 import numpy as np
 from torch.backends import cudnn
+import os
+import tempfile
+from .gcs_utils import download_file_from_gcs
 
 
 
@@ -44,6 +47,16 @@ def load_model(args, model, optimizer, loss_scaler=None):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True
             )
+        elif args.resume.startswith('gs://'):
+            with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                print(f'Downloading checkpoint from GCS: {args.resume}')
+                download_file_from_gcs(args.resume, tmp_path)
+                checkpoint = torch.load(tmp_path, map_location='cpu')
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
         model.load_state_dict(checkpoint['model'])
