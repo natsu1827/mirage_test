@@ -40,6 +40,8 @@ async def process_oct_image(image_gcs_path: str, request_id: str = None):
         # --- 1. Classification (模型分類) ---
         logger.info(f"[{request_id}] 🧠 Running Classification...")
         cls_args = run_cls_infer.get_args()
+        # Force CPU for Cloud Run
+        cls_args.device = 'cpu'
         # Ensure we use GCS for model weights if not set
         pred_label, confidence = run_cls_infer.main(cls_args, image_gcs_path)
         logger.info(f"[{request_id}] Classification Result: {pred_label} ({confidence:.4f})")
@@ -47,6 +49,8 @@ async def process_oct_image(image_gcs_path: str, request_id: str = None):
         # --- 2. Segmentation (模型分割) ---
         logger.info(f"[{request_id}] 🖼️ Running Segmentation...")
         seg_args = run_seg_infer.get_args()
+        # Force CPU for Cloud Run
+        seg_args.device = 'cpu'
         # Set segmentation output to GCS
         seg_args.output_dir = gcs_output_dir
         mask_path = run_seg_infer.main(seg_args, image_gcs_path)
