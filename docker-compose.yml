@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  web:
+    # 使用變數 ${TAG}，如果沒讀到變數，預設使用 latest
+    image: natsu1827/mirage_test:${TAG:-latest}
+    container_name: my-web-app
+    restart: always
+    ports:
+      - "80:80"
+    # 如果有環境變數，建議讀取 .env 檔案
+    env_file:
+      - .env
