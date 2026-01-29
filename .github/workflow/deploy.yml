@@ -6,9 +6,9 @@ on:
 
 env:
   # 設定你的 Docker Hub Image 名稱
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/mirage_test
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/mirage-test
   # 設定 Cloud Run 的服務名稱 (自訂，例如 my-web-service)
-  SERVICE_NAME: mirage_test
+  SERVICE_NAME: mirage-test
   # 設定 GCP 地區 (例如台灣是 asia-east1)
   REGION: asia-east1
 
