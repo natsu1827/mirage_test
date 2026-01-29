@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # GCS Output Bucket from Env
-OUTPUT_BUCKET = os.getenv("OUTPUT_BUCKET_NAME", "test-oct-image-output")
+OUTPUT_BUCKET = os.getenv("OUTPUT_BUCKET_NAME", "oct-image-output-test-v1")
 
 async def process_oct_image(image_gcs_path: str, request_id: str = None):
     """
@@ -132,5 +132,5 @@ async def process_oct_image(image_gcs_path: str, request_id: str = None):
 if __name__ == "__main__":
     # Test execution
     import asyncio
-    test_gcs_path = "gs://test-oct-image/NORMAL_7_9.png"
+    test_gcs_path = "gs://oct-image-test-v1/NORMAL_7_9.png"
     asyncio.run(process_oct_image(test_gcs_path, "test_req_001"))

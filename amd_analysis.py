@@ -10,9 +10,9 @@ from mutils.gcs_utils import download_file_from_gcs, upload_file_to_gcs, list_gc
 # ==========================================
 # 設定區
 # ==========================================
-INPUT_RAW_DIR = os.getenv("INPUT_BUCKET_URI", "gs://test-oct-image")
-INPUT_MASK_DIR = os.getenv("MASK_BUCKET_URI", "gs://test-oct-seg-mask")
-OUTPUT_DIR = os.getenv("OUTPUT_BUCKET_URI", "gs://test-oct-image-output")
+INPUT_RAW_DIR = os.getenv("INPUT_BUCKET_URI", "gs://oct-image-test-v1")
+INPUT_MASK_DIR = os.getenv("MASK_BUCKET_URI", "gs://oct-seg-mask-test-v1")
+OUTPUT_DIR = os.getenv("OUTPUT_BUCKET_URI", "gs://oct-image-output-test-v1")
 
 # 模擬前端輸入：若無數據請設為 None，若有數據請設為 float (例如 3.5)
 USER_PIXEL_SPACING = None 

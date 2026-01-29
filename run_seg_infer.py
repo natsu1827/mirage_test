@@ -83,7 +83,7 @@ def get_args():
         eval_freq=1,
 
         # ===== Runtime =====
-        base_output_dir='gs://test-oct-image-output',
+        base_output_dir='gs://oct-image-output-test-v1',
         device='cuda',
         seed=42,
         resume='',
@@ -103,8 +103,8 @@ def get_args():
         version='v1',
 
         # ===== Required =====
-        weights="gs://test-oct-mirage-model/MIRAGE-Base.pth",
-        data_path="gs://test-oct-image",
+        weights="gs://oct-mirage-model-test-v1/MIRAGE-Base.pth",
+        data_path="gs://oct-image-test-v1",
     )
 
     return process_args(args)
@@ -336,7 +336,7 @@ def main(args, img_path):
     #     best=args.test,
     # )
     # Load the best checkpoint
-    args.resume = 'gs://test-oct-mirage-model/seg/checkpoint-best.pth'
+    args.resume = 'gs://oct-mirage-model-test-v1/seg/checkpoint-best.pth'
     misc.load_model(args=args, model=model, optimizer=optimizer)
 
 
@@ -383,7 +383,7 @@ def evaluate(
     # Switch to evaluation mode
     model.eval()
 
-    save_dir = Path("gs://test-oct-image-output")
+    save_dir = Path("gs://oct-image-output-test-v1")
 
     if str(img_path).startswith("gs://"):
         img_bytes = download_bytes_from_gcs(str(img_path))

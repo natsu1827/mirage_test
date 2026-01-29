@@ -30,7 +30,7 @@ def get_args():
         linear_probing=False,
         resume='',
         pool='global',
-        base_output_dir='gs://test-oct-image-output',
+        base_output_dir='gs://oct-image-output-test-v1',
 
         # Data parameters
         num_workers=8,
@@ -57,7 +57,7 @@ def get_args():
         affine=True,
 
         # Required arguments
-        weights='gs://test-oct-mirage-model/MIRAGE-Base.pth',
+        weights='gs://oct-mirage-model-test-v1/MIRAGE-Base.pth',
         data_root='/path/to/data',
         data_set='dataset_name',
     )
@@ -79,7 +79,7 @@ def download_bytes_from_gcs(gcs_uri: str) -> bytes:
         raise RuntimeError(f"Failed to download {gcs_uri}: {e}")
 
 def process_args(args):
-    args.data_path = os.getenv("INPUT_BUCKET_URI", "gs://test-oct-image")
+    args.data_path = os.getenv("INPUT_BUCKET_URI", "gs://oct-image-test-v1")
     num_classes = 3
     args.num_classes = num_classes
     args.batch_size = 1
@@ -109,7 +109,7 @@ def main(args, img_path):
     optimizer = model_config.get_optimizer(model)
 
     # Evaluate on the best checkpoint
-    args.resume = 'gs://test-oct-mirage-model/cls/checkpoint-best-model.pth'
+    args.resume = 'gs://oct-mirage-model-test-v1/cls/checkpoint-best-model.pth'
     misc.load_model(args=args, model=model, optimizer=optimizer)
 
     # 處理 GCS 圖片路徑
