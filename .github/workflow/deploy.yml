@@ -9,7 +9,7 @@ env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/mirage-test
   # 設定 Cloud Run 的服務名稱 (自訂，例如 my-web-service)
   SERVICE_NAME: mirage-test
-  # 設定 GCP 地區 (例如台灣是 asia-east1)
+  # 設定 GCP 地區 (台灣是 asia-east1)
   REGION: asia-east1
 
 jobs:
