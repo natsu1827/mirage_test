@@ -1,48 +1,80 @@
-# ... 前面的 build-and-push job 保持不變 ...
+name: Deploy to Cloud Run
 
-  deploy:
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  # 設定你的 Docker Hub Image 名稱
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/mirage_test
+  # 設定 Cloud Run 的服務名稱 (自訂，例如 my-web-service)
+  SERVICE_NAME: mirage_test
+  # 設定 GCP 地區 (例如台灣是 asia-east1)
+  REGION: asia-east1
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 為了 Cloud Run，我們通常只需要 latest 或是用 SHA 當 tag
+      # 這裡示範同時推 latest 和 sha tag
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-to-cloud-run:
     needs: build-and-push
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 
+        uses: actions/checkout@v4
 
-      - name: Copy docker-compose.yml to server
-        uses: appleboy/scp-action@master
+      # 1. 認證 GCP
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.yml"
-          target: "/home/${{ secrets.USERNAME }}/my-app/"
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # ▼▼▼ 重點修改這裡 ▼▼▼
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@master
+      # 2. 部署到 Cloud Run
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          # 1. 這裡要把 GitHub 的 Commit SHA 傳進去 script 裡面
-          envs: GITHUB_SHA
-          script: |
-            cd /home/${{ secrets.USERNAME }}/my-app/
-            
-            # 2. 設定 TAG 變數
-            # 說明：metadata-action 的 type=sha,format=long 會產生 "sha-<完整的commit hash>"
-            # 所以我們這裡組合成一樣的字串
-            export TAG=sha-${GITHUB_SHA}
-            
-            # 3. 登入 GHCR (如果你的 Repo 是私有的才需要，公開可省略)
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          # 指定剛剛 Build 好的 Image (使用 SHA tag 確保版本精準)
+          image: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          
+          # 如果你的 Dockerfile EXPOSE 不是 8080，這裡要指定
+          # flags: '--port=3000' 
+          
+          # 如果你的服務是公開的 (允許未登入存取)
+          flags: '--allow-unauthenticated'
 
-            # 4. 拉取特定版本的 Image
-            # 注意：這裡前面加了 TAG=$TAG 是為了讓 docker-compose.yml 讀得到變數
-            TAG=$TAG docker compose pull
-
-            # 5. 啟動容器
-            TAG=$TAG docker compose up -d --remove-orphans
-            
-            # 6. 清理舊 Image
-            docker image prune -f
+          # 環境變數設定 (Cloud Run 不讀 .env 檔，要在這裡設定)
+          env_vars: |
+            NODE_ENV=production
+            DB_HOST=my-db-host
