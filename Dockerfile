@@ -8,7 +8,6 @@ ENV PORT 8080
 
 # Install system dependencies for OpenCV and GCS
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
     libglib2.0-0 \
     ffmpeg \
     libsm6 \
