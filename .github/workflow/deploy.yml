@@ -74,7 +74,4 @@ jobs:
           # 如果你的服務是公開的 (允許未登入存取)
           flags: '--allow-unauthenticated'
 
-          # 環境變數設定 (Cloud Run 不讀 .env 檔，要在這裡設定)
-          env_vars: |
-            NODE_ENV=production
-            DB_HOST=my-db-host
+          
